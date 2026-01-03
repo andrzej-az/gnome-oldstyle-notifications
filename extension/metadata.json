@@ -1,0 +1,13 @@
+{
+  "uuid": "notification-interceptor@az.home",
+  "name": "Notification Interceptor",
+  "description": "Intercepts and mutes native GNOME notifications for custom display",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49"
+  ],
+  "url": ""
+}

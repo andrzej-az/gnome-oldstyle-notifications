@@ -1,0 +1,24 @@
+.custom-notification {
+    background-color: rgba(30, 30, 30, 0.85);
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 20px;
+    width: 350px;
+}
+
+.custom-notification-app-name {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #888888;
+}
+
+.custom-notification-title {
+    font-size: 13pt;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.custom-notification-body {
+    font-size: 11pt;
+    color: #d0d0d0;
+}

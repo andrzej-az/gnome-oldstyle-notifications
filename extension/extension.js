@@ -4,43 +4,33 @@ import St from 'gi://St';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Clutter from 'gi://Clutter';
+import Pango from 'gi://Pango';
 
 export default class NotificationInterceptorExtension extends Extension {
     enable() {
         this._activeNotifications = [];
         this._recentKeys = new Set();
+        this._patchedSources = new Map(); // Map<Source, originalGetter>
 
         console.log('[Interceptor] Native drawing extension enabled');
 
-        // Hook into NotificationDaemon for universal interception
-        if (Main.notificationDaemon) {
-            this._origNotify = Main.notificationDaemon.Notify;
-            Main.notificationDaemon.Notify = (...args) => {
-                this._handleRawNotify(...args);
-                return this._origNotify.apply(Main.notificationDaemon, args);
-            };
-        }
-
         this._sourceAddedId = Main.messageTray.connect('source-added', (tray, source) => {
+            console.log(`[Interceptor] Source added: ${source.title}`);
             this._setupSource(source);
         });
 
         // Intercept existing sources
         Main.messageTray.getSources().forEach(source => {
+            console.log(`[Interceptor] Existing source found: ${source.title}`);
             this._setupSource(source);
         });
     }
 
-    _handleRawNotify(appName, replacesId, appIcon, summary, body, actions, hints, timeout) {
-        // This catches it at the D-Bus level.
-        // We'll let the Tray hook handle it if it arrives there to avoid duplicates
-        // (the tray hook has destroy() which is better).
-        // But if someone uses a source that doesn't hit the tray, we catch it here.
-        // Actually, for "COMPLETE" silence, we should probably handle it here
-        // and return the ID.
-    }
-
     _setupSource(source) {
+        // 1. Patch the policy to suppress native banners
+        this._patchSourcePolicy(source);
+
+        // 2. Connect to signal to show our CUSTOM banner
         if (source._interceptorConnected) return;
         source._interceptorConnected = true;
 
@@ -50,33 +40,69 @@ export default class NotificationInterceptorExtension extends Extension {
         });
     }
 
+    _patchSourcePolicy(source) {
+        if (!source.policy) {
+            console.log(`[Interceptor] Source ${source.title} has no policy object`);
+            return;
+        }
+
+        // Check if we already patched it
+        if (this._patchedSources.has(source)) return;
+
+        // "Duck typing" check: does it have a 'showBanners' property in its prototype or itself?
+        let proto = source.policy;
+        let descriptor = null;
+
+        while (proto) {
+            descriptor = Object.getOwnPropertyDescriptor(proto, 'showBanners');
+            if (descriptor && descriptor.get) break;
+            proto = Object.getPrototypeOf(proto);
+        }
+
+        if (!descriptor || !descriptor.get) {
+            console.warn(`[Interceptor] Could not find showBanners getter on source policy for ${source.title}`);
+            return; // Skip patching, but we still hooked the signal for custom banner
+        }
+
+        console.log(`[Interceptor] Patching policy for source: ${source.title}`);
+
+        const originalGetter = descriptor.get;
+        this._patchedSources.set(source, originalGetter);
+
+        // Override: always return false to suppress native banners
+        Object.defineProperty(source.policy, 'showBanners', {
+            get: () => {
+                // console.log(`[Interceptor] Blocked native banner for ${source.title}`);
+                return false;
+            },
+            configurable: true
+        });
+
+        source.policy.notify('show-banners');
+    }
+
+    _unpatchSource(source) {
+        const originalGetter = this._patchedSources.get(source);
+        if (!originalGetter || !source.policy) return;
+
+        Object.defineProperty(source.policy, 'showBanners', {
+            get: originalGetter,
+            configurable: true
+        });
+
+        source.policy.notify('show-banners');
+        this._patchedSources.delete(source);
+    }
+
     _handleNotification(source, notification) {
-        // Mute native banner and remove from tray entry if we want absolute silence
-        notification.displayBanner = false;
+        // No need to set displayBanner = false explicitly if policy handles it,
+        // but we can leave it for safety or remove it.
+        // Also, we REMOVED the D-Bus injection of 'resident'.
+        // If notifications disappear from tray, we might need to restore 'resident = true'
+        // right here.
+        notification.resident = true;
 
         const appName = source.title || source.app?.get_name() || 'System';
-
-        // Log serialized notification object for debugging
-        const serialized = {
-            title: notification.title || null,
-            body: notification.body || null,
-            bannerBody: notification.bannerBody || null,
-            iconName: notification.iconName || null,
-            gicon: notification.gicon ? notification.gicon.to_string() : null,
-            resident: notification.resident || false,
-            priority: notification.priority || 0,
-            datetime: notification.datetime ? notification.datetime.format_iso8601() : null,
-            appName: appName,
-        };
-        console.log(`[Interceptor] Notification Object: ${JSON.stringify(serialized)}`);
-
-        // Defer destruction to avoid "Object has been already disposed" errors
-        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-            if (notification && !notification.is_destroyed?.()) {
-                notification.destroy();
-            }
-            return GLib.SOURCE_REMOVE;
-        });
 
         const iconName = notification.gicon ? notification.gicon.to_string() : (notification.iconName || 'dialog-information-symbolic');
         const summary = notification.title || '';
@@ -153,20 +179,25 @@ export default class NotificationInterceptorExtension extends Extension {
             text: body,
             style_class: 'custom-notification-body',
         });
+        bodyLabel.clutter_text.line_wrap = true;
+        bodyLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
         textBox.add_child(bodyLabel);
-
-        // Positioning
-        const monitor = Main.layoutManager.primaryMonitor;
-        const bannerHeight = 130;
-        const margin = 30;
-        const x = monitor.x + monitor.width - 380;
-        const y = monitor.y + monitor.height - margin - (bannerHeight * (this._activeNotifications.length + 1));
-
-        banner.set_position(x, y);
 
         // Add to UI over everything else
         Main.layoutManager.addTopChrome(banner);
         this._activeNotifications.push(banner);
+
+        // Initial Position (Bottom-Right, accounting for own height)
+        const monitor = Main.layoutManager.primaryMonitor;
+        const margin = 30;
+        const [minH, natH] = banner.get_preferred_height(350); // width is 350
+        const x = monitor.x + monitor.width - 380;
+        const y = monitor.y + monitor.height - margin - natH;
+
+        banner.set_position(x, y);
+
+        // Move other notifications up to make room
+        this._repositionNotifications();
 
         // Animation
         banner.opacity = 0;
@@ -191,12 +222,19 @@ export default class NotificationInterceptorExtension extends Extension {
 
     _repositionNotifications() {
         const monitor = Main.layoutManager.primaryMonitor;
-        const bannerHeight = 130;
         const margin = 30;
+        const spacing = 15;
 
-        this._activeNotifications.forEach((banner, index) => {
+        // Start from the bottom of the screen
+        let currentBottomY = monitor.y + monitor.height - margin;
+
+        // Iterate backwards (newest is last in array, should be at bottom)
+        for (let i = this._activeNotifications.length - 1; i >= 0; i--) {
+            const banner = this._activeNotifications[i];
+            const [minH, natH] = banner.get_preferred_height(350);
+
             const x = monitor.x + monitor.width - 380;
-            const y = monitor.y + monitor.height - margin - (bannerHeight * (this._activeNotifications.length - index));
+            const y = currentBottomY - natH;
 
             banner.ease({
                 x: x,
@@ -204,7 +242,10 @@ export default class NotificationInterceptorExtension extends Extension {
                 duration: 300,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
-        });
+
+            // Move the bottom reference up for the next notification
+            currentBottomY = y - spacing;
+        }
     }
 
     _dismissNotification(banner) {
@@ -228,14 +269,15 @@ export default class NotificationInterceptorExtension extends Extension {
     }
 
     disable() {
-        if (this._origNotify && Main.notificationDaemon) {
-            Main.notificationDaemon.Notify = this._origNotify;
-            this._origNotify = null;
-        }
         if (this._sourceAddedId) {
             Main.messageTray.disconnect(this._sourceAddedId);
             this._sourceAddedId = null;
         }
+
+        // Restore patches
+        [...this._patchedSources.keys()].forEach(source => this._unpatchSource(source));
+        this._patchedSources.clear();
+
         this._activeNotifications.forEach(b => b.destroy());
         this._activeNotifications = [];
     }

@@ -129,8 +129,7 @@ export default class NotificationInterceptorExtension extends Extension {
             track_hover: true,
         });
         banner.spacing = 15;
-        banner.width = 350;
-
+        // Width is set in CSS (350px), don't override here to allow natural height
         // Icon
         const icon = new St.Icon({
             style_class: 'custom-notification-icon',
@@ -159,6 +158,8 @@ export default class NotificationInterceptorExtension extends Extension {
         const textBox = new St.BoxLayout({
             vertical: true,
             x_expand: true,
+            y_expand: false,
+            y_align: Clutter.ActorAlign.START, // Align to top
         });
         textBox.spacing = 5;
         banner.add_child(textBox);
@@ -180,21 +181,37 @@ export default class NotificationInterceptorExtension extends Extension {
             style_class: 'custom-notification-body',
         });
         bodyLabel.clutter_text.line_wrap = true;
+        bodyLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
         bodyLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+        // Explicitly set width in JS to ensure layout engine wraps before height calc
+        // bodyLabel.width = 230;
         textBox.add_child(bodyLabel);
 
         // Add to UI over everything else
         Main.layoutManager.addTopChrome(banner);
         this._activeNotifications.push(banner);
 
-        // Initial Position (Bottom-Right, accounting for own height)
         const monitor = Main.layoutManager.primaryMonitor;
         const margin = 30;
+
         const [minH, natH] = banner.get_preferred_height(350); // width is 350
+        banner.height = natH;
+
         const x = monitor.x + monitor.width - 380;
         const y = monitor.y + monitor.height - margin - natH;
 
         banner.set_position(x, y);
+
+        // Notify height changes (e.g. text wrapping) -> reposition
+        banner.connect('notify::height', () => {
+            this._repositionNotifications();
+        });
+
+        // Ensure it's correctly placed after the first layout pass
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._repositionNotifications();
+            return GLib.SOURCE_REMOVE;
+        });
 
         // Move other notifications up to make room
         this._repositionNotifications();
@@ -232,6 +249,9 @@ export default class NotificationInterceptorExtension extends Extension {
         for (let i = this._activeNotifications.length - 1; i >= 0; i--) {
             const banner = this._activeNotifications[i];
             const [minH, natH] = banner.get_preferred_height(350);
+
+            // Ensure height is up to date
+            banner.height = natH;
 
             const x = monitor.x + monitor.width - 380;
             const y = currentBottomY - natH;

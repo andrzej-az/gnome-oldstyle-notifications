@@ -27,24 +27,82 @@ export class NotificationDisplay {
             return GLib.SOURCE_REMOVE;
         });
 
-        // Container
+        // Main Container (Card) - Vertical Layout for Win11 style
         const banner = new St.BoxLayout({
             style_class: 'custom-notification',
-            vertical: false,
+            vertical: true,
             reactive: true,
             track_hover: true,
         });
-        banner.spacing = 15;
-        // Width is set in CSS (350px), don't override here to allow natural height
-        // Icon
-        const icon = new St.Icon({
-            style_class: 'custom-notification-icon',
+        banner.spacing = 8; // Tighter vertical spacing
+
+        // --- 1. Header Row: [App Icon] [App Name] ... [Menu] [Close] ---
+        const headerBox = new St.BoxLayout({
+            style_class: 'custom-notification-header-box',
+            vertical: false,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER, // Ensure whole row is aligned
         });
-        icon.icon_size = 64;
 
+        // App Icon (Small)
+        let appGIcon = null;
+        if (source.icon) appGIcon = source.icon;
+        else if (source.app && source.app.get_icon()) appGIcon = source.app.get_icon();
+        else if (source.app && source.app.get_app_info() && source.app.get_app_info().get_icon()) appGIcon = source.app.get_app_info().get_icon();
+
+        if (appGIcon) {
+            const appIcon = new St.Icon({
+                gicon: appGIcon,
+                icon_size: 16,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            headerBox.add_child(appIcon);
+        }
+
+        // App Name
+        const appLabel = new St.Label({
+            text: appName,
+            style_class: 'custom-notification-app-name',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        headerBox.add_child(appLabel);
+
+        // Spacer to push controls to the right
+        const spacer = new St.Widget({ x_expand: true });
+        headerBox.add_child(spacer);
+
+        // More/Menu Button (...)
+        const moreBtn = new St.Button({
+            child: new St.Icon({ icon_name: 'view-more-symbolic', icon_size: 16 }),
+            style_class: 'notification-icon-button',
+            y_align: Clutter.ActorAlign.CENTER,
+            reactive: true,
+        });
+        headerBox.add_child(moreBtn);
+
+        // Close Button (X)
+        const closeBtn = new St.Button({
+            child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 16 }),
+            style_class: 'notification-icon-button',
+            y_align: Clutter.ActorAlign.CENTER,
+            reactive: true,
+        });
+        closeBtn.connect('clicked', () => this._dismiss(banner));
+        headerBox.add_child(closeBtn);
+
+        banner.add_child(headerBox);
+
+        // --- 2. Content Row: [Large Icon] [Text Column] ---
+        const contentBox = new St.BoxLayout({
+            vertical: false,
+            x_expand: true,
+            y_expand: true,
+        });
+        contentBox.spacing = 0;
+
+        // Large Icon (Profile/Image)
         let finalGIcon = startGIcon;
-
-        // If no direct GIcon, try to resolve from iconName (paths/URIs)
+        // If no direct GIcon, try to resolve from iconName
         if (!finalGIcon && iconName) {
             try {
                 if (iconName.startsWith('/')) {
@@ -55,53 +113,27 @@ export class NotificationDisplay {
             } catch (e) { }
         }
 
+        const iconWidget = new St.Icon({
+            style_class: 'custom-notification-icon',
+            y_align: Clutter.ActorAlign.START,
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+
         if (finalGIcon) {
-            icon.gicon = finalGIcon;
-            banner.add_child(icon);
+            iconWidget.gicon = finalGIcon;
+            contentBox.add_child(iconWidget);
         } else if (iconName) {
-            icon.icon_name = iconName;
-            banner.add_child(icon);
+            iconWidget.icon_name = iconName;
+            contentBox.add_child(iconWidget);
         }
 
-        // Text
+        // Text Column
         const textBox = new St.BoxLayout({
+            style_class: 'custom-notification-text-box',
             vertical: true,
             x_expand: true,
-            y_expand: false,
-            y_align: Clutter.ActorAlign.START, // Align to top
+            y_align: Clutter.ActorAlign.START,
         });
-        textBox.spacing = 5;
-        banner.add_child(textBox);
-
-        // App Header (Small Icon + App Name)
-        const appHeader = new St.BoxLayout({
-            vertical: false,
-            x_align: Clutter.ActorAlign.START,
-        });
-        appHeader.spacing = 5;
-
-        // Try to get app icon
-        let appGIcon = null;
-        if (source.icon) appGIcon = source.icon;
-        else if (source.app && source.app.get_icon()) appGIcon = source.app.get_icon();
-        else if (source.app && source.app.get_app_info() && source.app.get_app_info().get_icon()) appGIcon = source.app.get_app_info().get_icon();
-
-        if (appGIcon) {
-            const appIcon = new St.Icon({
-                gicon: appGIcon,
-                icon_size: 16
-            });
-            appHeader.add_child(appIcon);
-        }
-
-        const appLabel = new St.Label({
-            text: appName.toUpperCase(),
-            style_class: 'custom-notification-app-name',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        appHeader.add_child(appLabel);
-
-        textBox.add_child(appHeader);
 
         const summaryLabel = new St.Label({
             text: summary,
@@ -116,9 +148,11 @@ export class NotificationDisplay {
         bodyLabel.clutter_text.line_wrap = true;
         bodyLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
         bodyLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
-        // Explicitly set width in JS to ensure layout engine wraps before height calc
-        // bodyLabel.width = 230;
+
         textBox.add_child(bodyLabel);
+        contentBox.add_child(textBox);
+
+        banner.add_child(contentBox);
 
         // Add to UI over everything else
         Main.layoutManager.addTopChrome(banner);
@@ -127,7 +161,8 @@ export class NotificationDisplay {
         const monitor = Main.layoutManager.primaryMonitor;
         const margin = 30;
 
-        const [minH, natH] = banner.get_preferred_height(350); // width is 350
+        // Manually trigger layout to get height
+        const [minH, natH] = banner.get_preferred_height(350);
         banner.height = natH;
 
         const x = monitor.x + monitor.width - 380;
@@ -157,7 +192,9 @@ export class NotificationDisplay {
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
 
-        // Dismissal
+        // Dismissal (Click anywhere on banner also dismisses, mimicking Toast notification click-to-open/dismiss behavior sort of)
+        // But since we added specific buttons, we might want to keep the general click for "Action" or "Dismiss".
+        // Current behavior is Dismiss.
         banner.connect('button-release-event', () => {
             this._dismiss(banner);
         });

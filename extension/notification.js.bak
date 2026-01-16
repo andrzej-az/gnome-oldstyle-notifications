@@ -142,73 +142,17 @@ export class NotificationDisplay {
         textBox.add_child(summaryLabel);
 
         const bodyLabel = new St.Label({
+            text: body,
             style_class: 'custom-notification-body',
         });
         bodyLabel.clutter_text.line_wrap = true;
         bodyLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
         bodyLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
 
-        // Support Markdown/HTML
-        try {
-            bodyLabel.clutter_text.set_markup(this._parseMarkup(body));
-        } catch (e) {
-            // Fallback if markup is invalid
-            bodyLabel.text = body;
-        }
-
         textBox.add_child(bodyLabel);
         contentBox.add_child(textBox);
 
         banner.add_child(contentBox);
-
-        // --- 3. Actions Row ---
-        // Notifications can have actions. 'default' is usually the body click.
-        // We want to list OTHER actions as buttons.
-        let actions = [];
-        if (notification.get_actions) {
-            actions = notification.get_actions(); // Returns array of IDs
-        }
-
-        // Filter out default action if it coincides with body click
-        const otherActions = actions.filter(a => a !== 'default');
-
-        if (otherActions.length > 0) {
-            const actionsBox = new St.BoxLayout({
-                style_class: 'custom-notification-actions-box',
-                vertical: false,
-                x_expand: true,
-                y_align: Clutter.ActorAlign.START,
-            });
-
-            otherActions.forEach(actionId => {
-                const label = notification.get_action_label(actionId) || actionId;
-                const button = new St.Button({
-                    style_class: 'custom-notification-action-button',
-                    can_focus: true,
-                    reactive: true,
-                    x_expand: true, // Expand to fill space? or just auto? User asked for horizontal list.
-                    // If multiple, maybe share space. If one, probably fine.
-                    // Let's use x_expand on buttons for "pill" look if desired or just natural width.
-                    // Win11 often has full width buttons. Let's try natural first or expand.
-                    // Let's stick to natural width buttons for now.
-                    child: new St.Label({
-                        text: label,
-                        style_class: 'custom-notification-action-label',
-                        y_align: Clutter.ActorAlign.CENTER,
-                        x_align: Clutter.ActorAlign.CENTER,
-                    })
-                });
-
-                button.connect('clicked', () => {
-                    notification.emit('action-invoked', actionId);
-                    this._dismiss(banner);
-                });
-
-                actionsBox.add_child(button);
-            });
-
-            banner.add_child(actionsBox);
-        }
 
         // Add to UI over everything else
         Main.layoutManager.addTopChrome(banner);
@@ -248,63 +192,20 @@ export class NotificationDisplay {
             mode: Clutter.AnimationMode.EASE_OUT_QUAD,
         });
 
-        // Interaction: Click to open/activate app
+        // Dismissal (Click anywhere on banner also dismisses, mimicking Toast notification click-to-open/dismiss behavior sort of)
+        // But since we added specific buttons, we might want to keep the general click for "Action" or "Dismiss".
+        // Current behavior is Dismiss.
         banner.connect('button-release-event', () => {
-            // If already dismissing (e.g. via Close button), do nothing
-            if (this._activeNotifications.indexOf(banner) === -1 || banner._dismissing) {
-                return Clutter.EVENT_PROPAGATE;
-            }
-
-            // Try to activate the source app
-            try {
-                if (source) {
-                    if (typeof source.open === 'function') {
-                        source.open(notification);
-                    } else if (source.app && typeof source.app.activate === 'function') {
-                        source.app.activate();
-                    } else if (source.app && typeof source.app.open_new_window === 'function') {
-                        source.app.open_new_window(-1);
-                    }
-                }
-            } catch (e) {
-                logError(e, 'NotificationInterceptor: Error activating app');
-            }
-
             this._dismiss(banner);
-            return Clutter.EVENT_STOP;
         });
 
         // Auto-dismiss
         GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
-            if (banner && banner.get_parent() && !banner._dismissing)
+            if (banner && banner.get_parent())
                 this._dismiss(banner);
             return GLib.SOURCE_REMOVE;
         });
     }
-
-    _parseMarkup(text) {
-        if (!text) return '';
-
-        // Basic Markdown Replacements
-        // Bold: **text** -> <b>text</b>
-        let parsed = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-
-        // Italic: *text* (careful with single asterisks in text) -> <i>text</i>
-        // Using a slightly strict regex to avoid matching math or lists roughly
-        parsed = parsed.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<i>$1</i>');
-
-        // Code: `text` -> <tt>text</tt>
-        parsed = parsed.replace(/`([^`]+)`/g, '<tt>$1</tt>');
-
-        // Links: [label](url) -> <a href="$2">$1</a>
-        parsed = parsed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-
-        // Newlines to <br> if not already handled by Pango's line wrap? 
-        // Pango handles \n fine.
-
-        return parsed;
-    }
-
 
     _reposition() {
         const monitor = Main.layoutManager.primaryMonitor;

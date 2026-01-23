@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="notification-interceptor">
+  <schema id="org.gnome.shell.extensions.notification-interceptor"
+          path="/org/gnome/shell/extensions/notification-interceptor/">
+
+    <key name="app-configs" type="a{s(bi)}">
+      <default>{}</default>
+      <summary>Application Configurations</summary>
+      <description>
+        Dictionary mapping Application Name to (Enabled (bool), Duration (int)).
+        Duration is in seconds.
+      </description>
+    </key>
+
+    <key name="duration-low" type="i">
+      <default>5</default>
+      <summary>Duration for Low Priority</summary>
+      <description>Display duration in seconds for Low priority notifications.</description>
+    </key>
+
+    <key name="duration-normal" type="i">
+      <default>10</default>
+      <summary>Duration for Normal Priority</summary>
+      <description>Display duration in seconds for Normal priority notifications.</description>
+    </key>
+
+    <key name="duration-critical" type="i">
+      <default>0</default>
+      <summary>Duration for Critical Priority</summary>
+      <description>Display duration in seconds for Critical priority notifications. 0 means persistent until dismissed.</description>
+    </key>
+
+  </schema>
+</schemalist>

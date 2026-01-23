@@ -6,13 +6,40 @@ import Pango from 'gi://Pango';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 export class NotificationDisplay {
-    constructor() {
+    constructor(settings) {
+        this._settings = settings;
         this._activeNotifications = [];
         this._recentKeys = new Set();
     }
 
     show(source, notification) {
         const appName = source.title || source.app?.get_name() || 'System';
+
+        // Check Settings
+        // Check Settings
+        let duration = 5; // Default fallback
+
+        if (this._settings) {
+            // Urgency Mapping: 0=Low, 1=Normal, 2=Critical
+            const urgency = notification.urgency || 1;
+
+            // Get Global Defaults
+            if (urgency === 0) duration = this._settings.get_int('duration-low');
+            else if (urgency === 2) duration = this._settings.get_int('duration-critical');
+            else duration = this._settings.get_int('duration-normal');
+
+            // Apply Per-App Overrides
+            const configs = this._settings.get_value('app-configs').recursiveUnpack();
+            if (configs[appName]) {
+                const [enabled, configuredDuration] = configs[appName];
+                if (!enabled) {
+                    console.log(`[Interceptor] Notification from ${appName} suppressed by user setting.`);
+                    return;
+                }
+                duration = configuredDuration;
+            }
+        }
+
         const startGIcon = notification.gicon || null;
         const iconName = notification.iconName || null;
         const summary = notification.title || '';
@@ -215,7 +242,7 @@ export class NotificationDisplay {
         this._activeNotifications.push(banner);
 
         const monitor = Main.layoutManager.primaryMonitor;
-        const margin = 30;
+        const margin = 50;
 
         // Manually trigger layout to get height
         const [minH, natH] = banner.get_preferred_height(350);
@@ -271,15 +298,22 @@ export class NotificationDisplay {
             }
 
             this._dismiss(banner);
+
+            if (notification) {
+                notification.destroy();
+            }
+
             return Clutter.EVENT_STOP;
         });
 
         // Auto-dismiss
-        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
-            if (banner && banner.get_parent() && !banner._dismissing)
-                this._dismiss(banner);
-            return GLib.SOURCE_REMOVE;
-        });
+        if (duration > 0) {
+            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, duration, () => {
+                if (banner && banner.get_parent() && !banner._dismissing)
+                    this._dismiss(banner);
+                return GLib.SOURCE_REMOVE;
+            });
+        }
     }
 
     _parseMarkup(text) {
@@ -308,7 +342,7 @@ export class NotificationDisplay {
 
     _reposition() {
         const monitor = Main.layoutManager.primaryMonitor;
-        const margin = 30;
+        const margin = 50;
         const spacing = 15;
 
         // Start from the bottom of the screen

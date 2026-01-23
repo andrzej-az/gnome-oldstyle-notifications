@@ -9,5 +9,6 @@
     "48",
     "49"
   ],
-  "url": ""
+  "url": "",
+  "settings-schema": "org.gnome.shell.extensions.notification-interceptor"
 }

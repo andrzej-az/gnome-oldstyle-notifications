@@ -13,307 +13,418 @@ export class NotificationDisplay {
     }
 
     show(source, notification) {
-        const appName = source.title || source.app?.get_name() || 'System';
-
-        // Check Settings
-        // Check Settings
-        let duration = 5; // Default fallback
-
-        if (this._settings) {
-            // Urgency Mapping: 0=Low, 1=Normal, 2=Critical
-            const urgency = notification.urgency || 1;
-
-            // Get Global Defaults
-            if (urgency === 0) duration = this._settings.get_int('duration-low');
-            else if (urgency === 2) duration = this._settings.get_int('duration-critical');
-            else duration = this._settings.get_int('duration-normal');
-
-            // Apply Per-App Overrides
-            const configs = this._settings.get_value('app-configs').recursiveUnpack();
-            if (configs[appName]) {
-                const [enabled, configuredDuration] = configs[appName];
-                if (!enabled) {
-                    console.log(`[Interceptor] Notification from ${appName} suppressed by user setting.`);
-                    return;
-                }
-                duration = configuredDuration;
+        try {
+            if (!notification) {
+                console.log('[Interceptor] show called with null notification');
+                return;
             }
-        }
 
-        const startGIcon = notification.gicon || null;
-        const iconName = notification.iconName || null;
-        const summary = notification.title || '';
-        const body = notification.bannerBody || notification.body || '';
+            // Defensively get properties that might fail if object is disposed
+            let appName = 'System';
+            let summary = '';
+            let body = '';
+            let nTitle = '';
 
-        const key = `${appName}:${summary}:${body}`;
-        if (this._recentKeys.has(key)) return;
+            try {
+                nTitle = notification.title || '';
+                summary = notification.title || '';
+                body = (notification.bannerBody || notification.body) || '';
+                if (source) {
+                    appName = source.title || (source.app && source.app.get_name()) || 'System';
+                }
+            } catch (e) {
+                console.log(`[Interceptor] Error accessing notification properties: ${e.message}`);
+                if (e.message.indexOf('disposed') !== -1) return;
+            }
 
-        this._recentKeys.add(key);
-        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
-            this._recentKeys.delete(key);
-            return GLib.SOURCE_REMOVE;
-        });
+            let duration = 5;
+            try {
+                duration = this._getDuration(appName, notification);
+            } catch (e) {
+                log(`[Interceptor] Error calling _getDuration: ${e.message}`);
+            }
 
-        // Main Container (Card) - Vertical Layout for Win11 style
-        const banner = new St.BoxLayout({
-            style_class: 'custom-notification',
-            vertical: true,
-            reactive: true,
-            track_hover: true,
-        });
-        banner.spacing = 8; // Tighter vertical spacing
+            if (duration === null)
+                return;
 
-        // --- 1. Header Row: [App Icon] [App Name] ... [Menu] [Close] ---
-        const headerBox = new St.BoxLayout({
-            style_class: 'custom-notification-header-box',
-            vertical: false,
-            x_expand: true,
-            y_align: Clutter.ActorAlign.CENTER, // Ensure whole row is aligned
-        });
+            let startGIcon = null;
+            let iconName = null;
+            try {
+                startGIcon = notification.gicon || null;
+                iconName = notification.iconName || null;
+            } catch (e) { }
 
-        // App Icon (Small)
-        let appGIcon = null;
-        if (source.icon) appGIcon = source.icon;
-        else if (source.app && source.app.get_icon()) appGIcon = source.app.get_icon();
-        else if (source.app && source.app.get_app_info() && source.app.get_app_info().get_icon()) appGIcon = source.app.get_app_info().get_icon();
+            log(`[Interceptor] Preparing banner for ${appName}: ${nTitle}`);
 
-        if (appGIcon) {
-            const appIcon = new St.Icon({
-                gicon: appGIcon,
-                icon_size: 16,
+            const key = `${appName}:${summary}:${body}`;
+            if (this._recentKeys.has(key)) return;
+
+            this._recentKeys.add(key);
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => {
+                this._recentKeys.delete(key);
+                return GLib.SOURCE_REMOVE;
+            });
+
+            // Main Container (Card) - Vertical Layout for Win11 style
+            const banner = new St.BoxLayout({
+                style_class: 'custom-notification',
+                vertical: true,
+                reactive: true,
+                track_hover: true,
+            });
+            banner.spacing = 8; // Tighter vertical spacing
+
+            // --- 1. Header Row: [App Icon] [App Name] ... [Menu] [Close] ---
+            const headerBox = new St.BoxLayout({
+                style_class: 'custom-notification-header-box',
+                vertical: false,
+                x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER, // Ensure whole row is aligned
+            });
+
+            // App Icon (Small)
+            let appGIcon = null;
+            if (source.icon) appGIcon = source.icon;
+            else if (source.app && source.app.get_icon()) appGIcon = source.app.get_icon();
+            else if (source.app && source.app.get_app_info() && source.app.get_app_info().get_icon()) appGIcon = source.app.get_app_info().get_icon();
+
+            if (appGIcon) {
+                const appIcon = new St.Icon({
+                    gicon: appGIcon,
+                    icon_size: 16,
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                headerBox.add_child(appIcon);
+            }
+
+            // App Name
+            const appLabel = new St.Label({
+                text: appName,
+                style_class: 'custom-notification-app-name',
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            headerBox.add_child(appIcon);
-        }
+            headerBox.add_child(appLabel);
 
-        // App Name
-        const appLabel = new St.Label({
-            text: appName,
-            style_class: 'custom-notification-app-name',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        headerBox.add_child(appLabel);
+            // Spacer to push controls to the right
+            const spacer = new St.Widget({ x_expand: true });
+            headerBox.add_child(spacer);
 
-        // Spacer to push controls to the right
-        const spacer = new St.Widget({ x_expand: true });
-        headerBox.add_child(spacer);
+            // More/Menu Button (...)
+            const moreBtn = new St.Button({
+                child: new St.Icon({ icon_name: 'view-more-symbolic', icon_size: 16 }),
+                style_class: 'notification-icon-button',
+                y_align: Clutter.ActorAlign.CENTER,
+                reactive: true,
+            });
+            headerBox.add_child(moreBtn);
 
-        // More/Menu Button (...)
-        const moreBtn = new St.Button({
-            child: new St.Icon({ icon_name: 'view-more-symbolic', icon_size: 16 }),
-            style_class: 'notification-icon-button',
-            y_align: Clutter.ActorAlign.CENTER,
-            reactive: true,
-        });
-        headerBox.add_child(moreBtn);
+            // Close Button (X)
+            const closeBtn = new St.Button({
+                child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 16 }),
+                style_class: 'notification-icon-button',
+                y_align: Clutter.ActorAlign.CENTER,
+                reactive: true,
+            });
+            closeBtn.connect('clicked', () => this._dismiss(banner));
+            headerBox.add_child(closeBtn);
 
-        // Close Button (X)
-        const closeBtn = new St.Button({
-            child: new St.Icon({ icon_name: 'window-close-symbolic', icon_size: 16 }),
-            style_class: 'notification-icon-button',
-            y_align: Clutter.ActorAlign.CENTER,
-            reactive: true,
-        });
-        closeBtn.connect('clicked', () => this._dismiss(banner));
-        headerBox.add_child(closeBtn);
+            banner.add_child(headerBox);
 
-        banner.add_child(headerBox);
-
-        // --- 2. Content Row: [Large Icon] [Text Column] ---
-        const contentBox = new St.BoxLayout({
-            vertical: false,
-            x_expand: true,
-            y_expand: true,
-        });
-        contentBox.spacing = 0;
-
-        // Large Icon (Profile/Image)
-        let finalGIcon = startGIcon;
-        // If no direct GIcon, try to resolve from iconName
-        if (!finalGIcon && iconName) {
-            try {
-                if (iconName.startsWith('/')) {
-                    finalGIcon = Gio.File.new_for_path(iconName).get_icon();
-                } else if (iconName.startsWith('file://')) {
-                    finalGIcon = Gio.File.new_for_uri(iconName).get_icon();
-                }
-            } catch (e) { }
-        }
-
-        const iconWidget = new St.Icon({
-            style_class: 'custom-notification-icon',
-            y_align: Clutter.ActorAlign.START,
-            x_align: Clutter.ActorAlign.CENTER,
-        });
-
-        if (finalGIcon) {
-            iconWidget.gicon = finalGIcon;
-            contentBox.add_child(iconWidget);
-        } else if (iconName) {
-            iconWidget.icon_name = iconName;
-            contentBox.add_child(iconWidget);
-        }
-
-        // Text Column
-        const textBox = new St.BoxLayout({
-            style_class: 'custom-notification-text-box',
-            vertical: true,
-            x_expand: true,
-            y_align: Clutter.ActorAlign.START,
-        });
-
-        const summaryLabel = new St.Label({
-            text: summary,
-            style_class: 'custom-notification-title',
-        });
-        textBox.add_child(summaryLabel);
-
-        const bodyLabel = new St.Label({
-            style_class: 'custom-notification-body',
-        });
-        bodyLabel.clutter_text.line_wrap = true;
-        bodyLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
-        bodyLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
-
-        // Support Markdown/HTML
-        try {
-            bodyLabel.clutter_text.set_markup(this._parseMarkup(body));
-        } catch (e) {
-            // Fallback if markup is invalid
-            bodyLabel.text = body;
-        }
-
-        textBox.add_child(bodyLabel);
-        contentBox.add_child(textBox);
-
-        banner.add_child(contentBox);
-
-        // --- 3. Actions Row ---
-        // Notifications can have actions. 'default' is usually the body click.
-        // We want to list OTHER actions as buttons.
-        let actions = [];
-        if (notification.get_actions) {
-            actions = notification.get_actions(); // Returns array of IDs
-        }
-
-        // Filter out default action if it coincides with body click
-        const otherActions = actions.filter(a => a !== 'default');
-
-        if (otherActions.length > 0) {
-            const actionsBox = new St.BoxLayout({
-                style_class: 'custom-notification-actions-box',
+            // --- 2. Content Row: [Large Icon] [Text Column] ---
+            const contentBox = new St.BoxLayout({
                 vertical: false,
+                x_expand: true,
+                y_expand: true,
+            });
+            contentBox.spacing = 0;
+
+            // Large Icon (Profile/Image)
+            let finalGIcon = startGIcon;
+            // If no direct GIcon, try to resolve from iconName
+            if (!finalGIcon && iconName) {
+                try {
+                    if (iconName.startsWith('/')) {
+                        finalGIcon = Gio.File.new_for_path(iconName).get_icon();
+                    } else if (iconName.startsWith('file://')) {
+                        finalGIcon = Gio.File.new_for_uri(iconName).get_icon();
+                    }
+                } catch (e) { }
+            }
+
+            const iconWidget = new St.Icon({
+                style_class: 'custom-notification-icon',
+                y_align: Clutter.ActorAlign.START,
+                x_align: Clutter.ActorAlign.CENTER,
+            });
+
+            if (finalGIcon) {
+                iconWidget.gicon = finalGIcon;
+                contentBox.add_child(iconWidget);
+            } else if (iconName) {
+                iconWidget.icon_name = iconName;
+                contentBox.add_child(iconWidget);
+            }
+
+            // Text Column
+            const textBox = new St.BoxLayout({
+                style_class: 'custom-notification-text-box',
+                vertical: true,
                 x_expand: true,
                 y_align: Clutter.ActorAlign.START,
             });
 
-            otherActions.forEach(actionId => {
-                const label = notification.get_action_label(actionId) || actionId;
-                const button = new St.Button({
-                    style_class: 'custom-notification-action-button',
-                    can_focus: true,
-                    reactive: true,
-                    x_expand: true, // Expand to fill space? or just auto? User asked for horizontal list.
-                    // If multiple, maybe share space. If one, probably fine.
-                    // Let's use x_expand on buttons for "pill" look if desired or just natural width.
-                    // Win11 often has full width buttons. Let's try natural first or expand.
-                    // Let's stick to natural width buttons for now.
-                    child: new St.Label({
-                        text: label,
-                        style_class: 'custom-notification-action-label',
-                        y_align: Clutter.ActorAlign.CENTER,
-                        x_align: Clutter.ActorAlign.CENTER,
-                    })
-                });
-
-                button.connect('clicked', () => {
-                    notification.emit('action-invoked', actionId);
-                    this._dismiss(banner);
-                });
-
-                actionsBox.add_child(button);
+            const summaryLabel = new St.Label({
+                text: summary,
+                style_class: 'custom-notification-title',
             });
+            textBox.add_child(summaryLabel);
 
-            banner.add_child(actionsBox);
-        }
+            const bodyLabel = new St.Label({
+                style_class: 'custom-notification-body',
+            });
+            bodyLabel.clutter_text.line_wrap = true;
+            bodyLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+            bodyLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
 
-        // Add to UI over everything else
-        Main.layoutManager.addTopChrome(banner);
-        this._activeNotifications.push(banner);
-
-        const monitor = Main.layoutManager.primaryMonitor;
-        const margin = 50;
-
-        // Manually trigger layout to get height
-        const [minH, natH] = banner.get_preferred_height(350);
-        banner.height = natH;
-
-        const x = monitor.x + monitor.width - 380;
-        const y = monitor.y + monitor.height - margin - natH;
-
-        banner.set_position(x, y);
-
-        // Notify height changes (e.g. text wrapping) -> reposition
-        banner.connect('notify::height', () => {
-            this._reposition();
-        });
-
-        // Ensure it's correctly placed after the first layout pass
-        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-            this._reposition();
-            return GLib.SOURCE_REMOVE;
-        });
-
-        // Move other notifications up to make room
-        this._reposition();
-
-        // Animation
-        banner.opacity = 0;
-        banner.ease({
-            opacity: 255,
-            duration: 300,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-        });
-
-        // Interaction: Click to open/activate app
-        banner.connect('button-release-event', () => {
-            // If already dismissing (e.g. via Close button), do nothing
-            if (this._activeNotifications.indexOf(banner) === -1 || banner._dismissing) {
-                return Clutter.EVENT_PROPAGATE;
+            // Support Markdown/HTML
+            try {
+                bodyLabel.clutter_text.set_markup(this._parseMarkup(body));
+            } catch (e) {
+                // Fallback if markup is invalid
+                bodyLabel.text = body;
             }
 
-            // Try to activate the source app
+            textBox.add_child(bodyLabel);
+            contentBox.add_child(textBox);
+
+            banner.add_child(contentBox);
+
+            // --- 3. Actions Row ---
+            // Notifications can have actions. 'default' is usually the body click.
+            // We want to list OTHER actions as buttons.
+            let actions = [];
             try {
-                if (source) {
-                    if (typeof source.open === 'function') {
-                        source.open(notification);
-                    } else if (source.app && typeof source.app.activate === 'function') {
-                        source.app.activate();
-                    } else if (source.app && typeof source.app.open_new_window === 'function') {
-                        source.app.open_new_window(-1);
+                if (Array.isArray(notification.actions) && notification.actions.length > 0) {
+                    log(`[Interceptor] Actions array found. Length: ${notification.actions.length}`);
+                    if (notification.actions.length > 0) {
+                        const first = notification.actions[0];
+                        log(`[Interceptor] First action type: ${typeof first}`);
+                        if (typeof first === 'object') {
+                            log(`[Interceptor] First action keys: ${Object.keys(first).join(', ')}`);
+                            // Proto chain?
+                            let p = Object.getPrototypeOf(first);
+                            if (p) log(`[Interceptor] First action proto keys: ${Object.getOwnPropertyNames(p).join(', ')}`);
+                        }
                     }
+
+                    if (typeof notification.actions[0] === 'string') {
+                        // Handle flat array of [id, label, id, label]
+                        log(`[Interceptor] Actions detected as flat string array`);
+                        for (let i = 0; i < notification.actions.length; i += 2) {
+                            actions.push({
+                                id: notification.actions[i],
+                                label: notification.actions[i + 1] || notification.actions[i]
+                            });
+                        }
+                    } else {
+                        // Handle array of objects {id, label}
+                        actions = notification.actions;
+                    }
+                } else if (typeof notification.get_actions === 'function') {
+                    const actionIds = notification.get_actions() || [];
+                    actions = actionIds.map(id => ({
+                        id,
+                        label: typeof notification.get_action_label === 'function' ? notification.get_action_label(id) : id,
+                    }));
                 }
             } catch (e) {
-                logError(e, 'NotificationInterceptor: Error activating app');
+                log(`[Interceptor] Error retrieving actions: ${e.message}`);
             }
 
-            this._dismiss(banner);
+            log(`[Interceptor] Actions found: ${JSON.stringify(actions)}`);
 
-            if (notification) {
-                notification.destroy();
+            // Filter out default action if it coincides with body click
+            const otherActions = actions.filter(a => a.id !== 'default');
+
+            if (otherActions.length > 0) {
+                const actionsBox = new St.BoxLayout({
+                    style_class: 'custom-notification-actions-box',
+                    vertical: false,
+                    x_expand: true,
+                    y_align: Clutter.ActorAlign.START,
+                });
+
+                otherActions.forEach(action => {
+                    const actionId = action.id;
+                    const label = action.label || actionId;
+
+                    const button = new St.Button({
+                        style_class: 'custom-notification-action-button',
+                        can_focus: true,
+                        reactive: true,
+                        x_expand: true,
+                        child: new St.Label({
+                            text: label,
+                            style_class: 'custom-notification-action-label',
+                            y_align: Clutter.ActorAlign.CENTER,
+                            x_align: Clutter.ActorAlign.CENTER,
+                        }),
+                    });
+
+                    button.connect('clicked', () => {
+                        log(`[Interceptor] Action button clicked. Label: ${label}`);
+                        try {
+                            // Priority 1: Call activate() on the action object itself (native wrapper)
+                            if (typeof action.activate === 'function') {
+                                log(`[Interceptor] Calling action.activate() on action object`);
+                                action.activate();
+                            }
+                            // Priority 2: Call _callback() (internal private method seen in logs)
+                            else if (typeof action._callback === 'function') {
+                                log(`[Interceptor] Calling action._callback()`);
+                                action._callback();
+                            }
+                            // Priority 3: Fallback to notification methods if we found an ID
+                            else if (actionId) {
+                                if (typeof notification.activate === 'function') {
+                                    log(`[Interceptor] Calling notification.activate("${actionId}")`);
+                                    notification.activate(actionId);
+                                } else if (typeof notification.invokeAction === 'function') {
+                                    log(`[Interceptor] Calling notification.invokeAction("${actionId}")`);
+                                    notification.invokeAction(actionId);
+                                } else {
+                                    log(`[Interceptor] Falling back to emit('action-invoked', "${actionId}")`);
+                                    notification.emit('action-invoked', actionId);
+                                }
+                            } else {
+                                log(`[Interceptor] Unable to activate action: No activate method and no action ID found.`);
+                            }
+                        } catch (e) {
+                            log(`[Interceptor] Error activating action: ${e.message}`);
+                        }
+                        this._dismiss(banner);
+                    });
+
+                    actionsBox.add_child(button);
+                });
+
+                banner.add_child(actionsBox);
             }
 
-            return Clutter.EVENT_STOP;
-        });
+            // Add to UI over everything else
+            Main.layoutManager.addTopChrome(banner);
+            this._activeNotifications.push(banner);
 
-        // Auto-dismiss
-        if (duration > 0) {
-            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, duration, () => {
-                if (banner && banner.get_parent() && !banner._dismissing)
-                    this._dismiss(banner);
+            const monitor = Main.layoutManager.primaryMonitor;
+            const margin = 50;
+
+            // Manually trigger layout to get height
+            const [minH, natH] = banner.get_preferred_height(350);
+            banner.height = natH;
+
+            const x = monitor.x + monitor.width - 380;
+            const y = monitor.y + monitor.height - margin - natH;
+
+            console.log(`[Interceptor] Banner position: x=${x}, y=${y}, height=${natH}`);
+            banner.set_position(x, y);
+
+            // Notify height changes (e.g. text wrapping) -> reposition
+            banner.connect('notify::height', () => {
+                this._reposition();
+            });
+
+            // Ensure it's correctly placed after the first layout pass
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                this._reposition();
                 return GLib.SOURCE_REMOVE;
             });
+
+            // Move other notifications up to make room
+            this._reposition();
+
+            // Animation
+            banner.opacity = 0;
+            banner.ease({
+                opacity: 255,
+                duration: 300,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+            console.log('[Interceptor] Banner shown and animation started');
+
+            // Interaction: Click to open/activate app
+            banner.connect('button-release-event', () => {
+                // If already dismissing (e.g. via Close button), do nothing
+                if (this._activeNotifications.indexOf(banner) === -1 || banner._dismissing) {
+                    return Clutter.EVENT_PROPAGATE;
+                }
+
+                // Try to activate the source app
+                try {
+                    if (notification && typeof notification.activate === 'function') {
+                        notification.activate();
+                    } else if (source) {
+                        if (typeof source.open === 'function') {
+                            source.open(notification);
+                        } else if (source.app && typeof source.app.activate === 'function') {
+                            source.app.activate();
+                        } else if (source.app && typeof source.app.open_new_window === 'function') {
+                            source.app.open_new_window(-1);
+                        }
+                    }
+                } catch (e) {
+                    logError(e, 'NotificationInterceptor: Error activating app');
+                }
+
+                this._dismiss(banner);
+
+                return Clutter.EVENT_STOP;
+            });
+
+            if (duration > 0) {
+                GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, duration, () => {
+                    if (banner && banner.get_parent() && !banner._dismissing)
+                        this._dismiss(banner);
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        } catch (e) {
+            console.log(`[Interceptor] Critical error in show(): ${e.message}`);
+            console.log(e.stack);
         }
+    }
+
+    _getDuration(appName, notification) {
+        let duration = 5; // Default fallback
+
+        if (!this._settings)
+            return duration;
+
+        // Urgency Mapping: 0=Low, 1=Normal, 2=Critical
+        let urgency = 1;
+        try {
+            urgency = notification.urgency || 1;
+        } catch (e) { }
+
+        // Get Global Defaults
+        if (urgency === 0)
+            duration = this._settings.get_int('duration-low');
+        else if (urgency === 2)
+            duration = this._settings.get_int('duration-critical');
+        else
+            duration = this._settings.get_int('duration-normal');
+
+        // Apply Per-App Overrides
+        const configs = this._settings.get_value('app-configs').recursiveUnpack();
+        if (configs[appName]) {
+            const [enabled, configuredDuration] = configs[appName];
+            if (!enabled) {
+                log(`[Interceptor] Notification from ${appName} suppressed by user setting.`);
+                return null;
+            }
+            duration = configuredDuration;
+        }
+
+        return duration;
     }
 
     _parseMarkup(text) {
@@ -351,6 +462,8 @@ export class NotificationDisplay {
         // Iterate backwards (newest is last in array, should be at bottom)
         for (let i = this._activeNotifications.length - 1; i >= 0; i--) {
             const banner = this._activeNotifications[i];
+            if (!banner || !banner.get_parent()) continue;
+
             const [minH, natH] = banner.get_preferred_height(350);
 
             // Ensure height is up to date

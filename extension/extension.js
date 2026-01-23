@@ -20,22 +20,28 @@ export default class NotificationInterceptorExtension extends Extension {
 
             const self = this;
 
-            TrayClass.prototype._showNotification = function () {
-                // 'this' is the messageTray instance
-                // In modern Gnome, _showNotification takes no args and uses _notificationQueue[0]
-
-                let notification = null;
-                if (this._notificationQueue && this._notificationQueue.length > 0) {
+            TrayClass.prototype._showNotification = function (notificationArg) {
+                let notification = notificationArg;
+                if (!notification && this._notificationQueue && this._notificationQueue.length > 0) {
                     notification = this._notificationQueue[0];
                 }
 
                 if (notification) {
-                    console.log(`[Interceptor] Trapped native notification: ${notification.title}`);
+                    let nTitle = '[No Title]';
+                    try {
+                        nTitle = notification.title;
+                    } catch (e) { }
+
+                    log(`[Interceptor] Trapped native notification: ${nTitle}`);
 
                     // Show our CUSTOM banner
                     // Ensure we pass source (notification.source is standard)
                     if (self._display) {
-                        self._display.show(notification.source, notification);
+                        try {
+                            self._display.show(notification.source, notification);
+                        } catch (e) {
+                            log(`[Interceptor] Error calling display.show: ${e.message}`);
+                        }
                     }
 
                     // SUPPRESS NATIVE BANNER

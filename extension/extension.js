@@ -44,43 +44,18 @@ export default class NotificationInterceptorExtension extends Extension {
                         }
                     }
 
+                    // CRITICAL: Remove from queue to prevent stacking blockage
+                    // Since we suppress the native show, the MessageTray never shifts this notification
+                    // out of the queue, causing subsequent checks to pick the same one if not cleaned up.
+                    if (this._notificationQueue) {
+                        const index = this._notificationQueue.indexOf(notification);
+                        if (index > -1) {
+                            this._notificationQueue.splice(index, 1);
+                            log(`[Interceptor] Removed notification '${nTitle}' from queue to unblock next items.`);
+                        }
+                    }
+
                     // SUPPRESS NATIVE BANNER
-                    // We do NOT call `self._origShowNotification.apply(this)`
-                    // This creates the "hide native at all" effect.
-
-                    // QUEUE MANAGEMENT CRITICAL FIX:
-                    // If we don't call original, the MessageTray thinks it's still trying to show it?
-                    // Or maybe it just called this and considers it done?
-                    // Actually, MessageTray usually waits for the banner to be closed/destroyed.
-                    // If no banner is created, the state might get stuck.
-
-                    // To avoid stuck queue, we should probably manually expire the notification from the tray's perspective
-                    // or acknowledge it.
-                    // However, immediate acknowledgment `notification.destroy()` removes it from history too?
-
-                    // Workaround: We mark it as 'resident' if we want it in history, then acknowledge?
-                    // Let's try to simulate the banner lifecycle if needed.
-                    // For now, I will just intercept. If the user complains about "stacking" not working (queue stuck),
-                    // we will add logic to `this._notificationState = State.IDLE` or invoke `this._onNotificationDestroyed()`.
-
-                    // Attempt to clear from queue to prevent stacking blockage:
-                    // Note: This is an internal implementation detail of MessageTray.
-                    // If we remove it from queue, we might lose history.
-
-                    // Let's rely on the user's observation: "can we switch to this approach?"
-                    // The other repo *does* show the banner (just moved).
-                    // If we want to hide it, we must ensure we don't break the loop.
-
-                    // HACK: Call original but make it invisible?
-                    // This is safer for the state machine.
-                    // But the user said "Hide native at all".
-
-                    // Let's try the "Silent Run"
-                    // We let original run but destroy/hide component immediately?
-                    // No, that flashes.
-
-                    // Let's proceed with NO-OP native call.
-                    // If it blocks, I will advise.
                     return;
                 }
 

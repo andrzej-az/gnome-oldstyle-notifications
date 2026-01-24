@@ -360,16 +360,25 @@ export class NotificationDisplay {
 
                 // Try to activate the source app
                 try {
-                    if (notification && typeof notification.activate === 'function') {
-                        notification.activate();
-                    } else if (source) {
-                        if (typeof source.open === 'function') {
-                            source.open(notification);
-                        } else if (source.app && typeof source.app.activate === 'function') {
+                    // Always try to bring the window to front if possible
+                    if (source) {
+                        if (source.app && typeof source.app.activate === 'function') {
+                            log(`[Interceptor] Activating window for app: ${source.app.get_name()}`);
                             source.app.activate();
                         } else if (source.app && typeof source.app.open_new_window === 'function') {
+                            // Some apps might need this if no window is open?
+                            // But usually activate() handles it.
                             source.app.open_new_window(-1);
+                        } else if (typeof source.open === 'function') {
+                            // Fallback for non-app sources
+                            source.open(notification);
                         }
+                    }
+
+                    // Also invoke the notification's default action
+                    if (notification && typeof notification.activate === 'function') {
+                        log(`[Interceptor] Invoking default notification action`);
+                        notification.activate();
                     }
                 } catch (e) {
                     logError(e, 'NotificationInterceptor: Error activating app');

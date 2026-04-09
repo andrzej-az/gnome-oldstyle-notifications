@@ -79,8 +79,9 @@ export class NotificationDisplay {
                 style_class: 'custom-notification-header-box',
                 vertical: false,
                 x_expand: true,
-                y_align: Clutter.ActorAlign.CENTER, // Ensure whole row is aligned
+                y_align: Clutter.ActorAlign.CENTER,
             });
+            headerBox.spacing = 8;
 
             // App Icon (Small)
             let appGIcon = null;
@@ -109,14 +110,6 @@ export class NotificationDisplay {
             const spacer = new St.Widget({ x_expand: true });
             headerBox.add_child(spacer);
 
-            // More/Menu Button (...)
-            const moreBtn = new St.Button({
-                child: new St.Icon({ icon_name: 'view-more-symbolic', icon_size: 16 }),
-                style_class: 'notification-icon-button',
-                y_align: Clutter.ActorAlign.CENTER,
-                reactive: true,
-            });
-            headerBox.add_child(moreBtn);
 
             // Close Button (X)
             const closeBtn = new St.Button({
@@ -153,6 +146,7 @@ export class NotificationDisplay {
 
             const iconWidget = new St.Icon({
                 style_class: 'custom-notification-icon',
+                icon_size: 48,
                 y_align: Clutter.ActorAlign.START,
                 x_align: Clutter.ActorAlign.CENTER,
             });
@@ -172,6 +166,7 @@ export class NotificationDisplay {
                 x_expand: true,
                 y_align: Clutter.ActorAlign.START,
             });
+            textBox.spacing = 2;
 
             const summaryLabel = new St.Label({
                 text: summary,
@@ -253,6 +248,7 @@ export class NotificationDisplay {
                     x_expand: true,
                     y_align: Clutter.ActorAlign.START,
                 });
+                actionsBox.spacing = 12;
 
                 otherActions.forEach(action => {
                     const actionId = action.id;
@@ -262,12 +258,10 @@ export class NotificationDisplay {
                         style_class: 'custom-notification-action-button',
                         can_focus: true,
                         reactive: true,
-                        x_expand: true,
                         child: new St.Label({
                             text: label,
                             style_class: 'custom-notification-action-label',
                             y_align: Clutter.ActorAlign.CENTER,
-                            x_align: Clutter.ActorAlign.CENTER,
                         }),
                     });
 

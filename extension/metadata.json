@@ -1,14 +1,17 @@
 {
-  "uuid": "notification-interceptor@az.home",
-  "name": "Notification Interceptor",
-  "description": "Intercepts and mutes native GNOME notifications for custom display",
+  "uuid": "oldstyle-notifications@andrzej.az",
+  "name": "Oldstyle Notifications",
+  "description": "Restore classic Windows notification style to GNOME Shell.",
+  "author": "Andrzej Az",
+  "version": 1,
   "shell-version": [
     "45",
     "46",
     "47",
     "48",
-    "49"
+    "49",
+    "50"
   ],
-  "url": "",
-  "settings-schema": "org.gnome.shell.extensions.notification-interceptor"
+  "url": "https://github.com/andrzej-az/gnome-oldstyle-notifications",
+  "settings-schema": "org.gnome.shell.extensions.oldstyle-notifications"
 }

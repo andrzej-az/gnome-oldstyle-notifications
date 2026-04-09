@@ -2,13 +2,13 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { NotificationDisplay } from './notification.js';
 
-export default class NotificationInterceptorExtension extends Extension {
+export default class OldstyleNotificationsExtension extends Extension {
     enable() {
         this._display = new NotificationDisplay(this.getSettings());
 
         this._patched = false;
 
-        console.log('[Interceptor] Native drawing extension enabled (Patching MessageTray)');
+        console.log('[Oldstyle Notifications] Native drawing extension enabled (Patching MessageTray)');
 
         // Patch MessageTray.prototype._showNotification
         // We look for the prototype on the instance constructor to be safe
@@ -32,7 +32,7 @@ export default class NotificationInterceptorExtension extends Extension {
                         nTitle = notification.title;
                     } catch (e) { }
 
-                    log(`[Interceptor] Trapped native notification: ${nTitle}`);
+                    log(`[Oldstyle Notifications] Trapped native notification: ${nTitle}`);
 
                     // Show our CUSTOM banner
                     // Ensure we pass source (notification.source is standard)
@@ -40,7 +40,7 @@ export default class NotificationInterceptorExtension extends Extension {
                         try {
                             self._display.show(notification.source, notification);
                         } catch (e) {
-                            log(`[Interceptor] Error calling display.show: ${e.message}`);
+                            log(`[Oldstyle Notifications] Error calling display.show: ${e.message}`);
                         }
                     }
 
@@ -51,7 +51,7 @@ export default class NotificationInterceptorExtension extends Extension {
                         const index = this._notificationQueue.indexOf(notification);
                         if (index > -1) {
                             this._notificationQueue.splice(index, 1);
-                            log(`[Interceptor] Removed notification '${nTitle}' from queue to unblock next items.`);
+                            log(`[Oldstyle Notifications] Removed notification '${nTitle}' from queue to unblock next items.`);
                         }
                     }
 
@@ -65,7 +65,7 @@ export default class NotificationInterceptorExtension extends Extension {
 
             this._patched = true;
         } else {
-            console.error('[Interceptor] Could not find MessageTray prototype to patch');
+            console.error('[Oldstyle Notifications] Could not find MessageTray prototype to patch');
         }
     }
 

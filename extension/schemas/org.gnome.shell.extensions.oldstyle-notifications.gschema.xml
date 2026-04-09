@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<schemalist gettext-domain="notification-interceptor">
-  <schema id="org.gnome.shell.extensions.notification-interceptor"
-          path="/org/gnome/shell/extensions/notification-interceptor/">
+<schemalist gettext-domain="oldstyle-notifications">
+  <schema id="org.gnome.shell.extensions.oldstyle-notifications"
+          path="/org/gnome/shell/extensions/oldstyle-notifications/">
 
     <key name="app-configs" type="a{s(bi)}">
       <default>{}</default>

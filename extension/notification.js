@@ -15,7 +15,7 @@ export class NotificationDisplay {
     show(source, notification) {
         try {
             if (!notification) {
-                console.log('[Interceptor] show called with null notification');
+                console.log('[Oldstyle Notifications] show called with null notification');
                 return;
             }
 
@@ -33,7 +33,7 @@ export class NotificationDisplay {
                     appName = source.title || (source.app && source.app.get_name()) || 'System';
                 }
             } catch (e) {
-                console.log(`[Interceptor] Error accessing notification properties: ${e.message}`);
+                console.log(`[Oldstyle Notifications] Error accessing notification properties: ${e.message}`);
                 if (e.message.indexOf('disposed') !== -1) return;
             }
 
@@ -41,7 +41,7 @@ export class NotificationDisplay {
             try {
                 duration = this._getDuration(appName, notification);
             } catch (e) {
-                log(`[Interceptor] Error calling _getDuration: ${e.message}`);
+                log(`[Oldstyle Notifications] Error calling _getDuration: ${e.message}`);
             }
 
             if (duration === null)
@@ -54,7 +54,7 @@ export class NotificationDisplay {
                 iconName = notification.iconName || null;
             } catch (e) { }
 
-            log(`[Interceptor] Preparing banner for ${appName}: ${nTitle}`);
+            log(`[Oldstyle Notifications] Preparing banner for ${appName}: ${nTitle}`);
 
             const key = `${appName}:${summary}:${body}`;
             if (this._recentKeys.has(key)) return;
@@ -200,21 +200,21 @@ export class NotificationDisplay {
             let actions = [];
             try {
                 if (Array.isArray(notification.actions) && notification.actions.length > 0) {
-                    log(`[Interceptor] Actions array found. Length: ${notification.actions.length}`);
+                    log(`[Oldstyle Notifications] Actions array found. Length: ${notification.actions.length}`);
                     if (notification.actions.length > 0) {
                         const first = notification.actions[0];
-                        log(`[Interceptor] First action type: ${typeof first}`);
+                        log(`[Oldstyle Notifications] First action type: ${typeof first}`);
                         if (typeof first === 'object') {
-                            log(`[Interceptor] First action keys: ${Object.keys(first).join(', ')}`);
+                            log(`[Oldstyle Notifications] First action keys: ${Object.keys(first).join(', ')}`);
                             // Proto chain?
                             let p = Object.getPrototypeOf(first);
-                            if (p) log(`[Interceptor] First action proto keys: ${Object.getOwnPropertyNames(p).join(', ')}`);
+                            if (p) log(`[Oldstyle Notifications] First action proto keys: ${Object.getOwnPropertyNames(p).join(', ')}`);
                         }
                     }
 
                     if (typeof notification.actions[0] === 'string') {
                         // Handle flat array of [id, label, id, label]
-                        log(`[Interceptor] Actions detected as flat string array`);
+                        log(`[Oldstyle Notifications] Actions detected as flat string array`);
                         for (let i = 0; i < notification.actions.length; i += 2) {
                             actions.push({
                                 id: notification.actions[i],
@@ -233,10 +233,10 @@ export class NotificationDisplay {
                     }));
                 }
             } catch (e) {
-                log(`[Interceptor] Error retrieving actions: ${e.message}`);
+                log(`[Oldstyle Notifications] Error retrieving actions: ${e.message}`);
             }
 
-            log(`[Interceptor] Actions found: ${JSON.stringify(actions)}`);
+            log(`[Oldstyle Notifications] Actions found: ${JSON.stringify(actions)}`);
 
             // Filter out default action if it coincides with body click
             const otherActions = actions.filter(a => a.id !== 'default');
@@ -266,35 +266,35 @@ export class NotificationDisplay {
                     });
 
                     button.connect('clicked', () => {
-                        log(`[Interceptor] Action button clicked. Label: ${label}`);
+                        log(`[Oldstyle Notifications] Action button clicked. Label: ${label}`);
                         try {
                             // Priority 1: Call activate() on the action object itself (native wrapper)
                             if (typeof action.activate === 'function') {
-                                log(`[Interceptor] Calling action.activate() on action object`);
+                                log(`[Oldstyle Notifications] Calling action.activate() on action object`);
                                 action.activate();
                             }
                             // Priority 2: Call _callback() (internal private method seen in logs)
                             else if (typeof action._callback === 'function') {
-                                log(`[Interceptor] Calling action._callback()`);
+                                log(`[Oldstyle Notifications] Calling action._callback()`);
                                 action._callback();
                             }
                             // Priority 3: Fallback to notification methods if we found an ID
                             else if (actionId) {
                                 if (typeof notification.activate === 'function') {
-                                    log(`[Interceptor] Calling notification.activate("${actionId}")`);
+                                    log(`[Oldstyle Notifications] Calling notification.activate("${actionId}")`);
                                     notification.activate(actionId);
                                 } else if (typeof notification.invokeAction === 'function') {
-                                    log(`[Interceptor] Calling notification.invokeAction("${actionId}")`);
+                                    log(`[Oldstyle Notifications] Calling notification.invokeAction("${actionId}")`);
                                     notification.invokeAction(actionId);
                                 } else {
-                                    log(`[Interceptor] Falling back to emit('action-invoked', "${actionId}")`);
+                                    log(`[Oldstyle Notifications] Falling back to emit('action-invoked', "${actionId}")`);
                                     notification.emit('action-invoked', actionId);
                                 }
                             } else {
-                                log(`[Interceptor] Unable to activate action: No activate method and no action ID found.`);
+                                log(`[Oldstyle Notifications] Unable to activate action: No activate method and no action ID found.`);
                             }
                         } catch (e) {
-                            log(`[Interceptor] Error activating action: ${e.message}`);
+                            log(`[Oldstyle Notifications] Error activating action: ${e.message}`);
                         }
                         this._dismiss(banner);
                     });
@@ -319,7 +319,7 @@ export class NotificationDisplay {
             const x = monitor.x + monitor.width - 380;
             const y = monitor.y + monitor.height - margin - natH;
 
-            console.log(`[Interceptor] Banner position: x=${x}, y=${y}, height=${natH}`);
+            console.log(`[Oldstyle Notifications] Banner position: x=${x}, y=${y}, height=${natH}`);
             banner.set_position(x, y);
 
             // Notify height changes (e.g. text wrapping) -> reposition
@@ -343,7 +343,7 @@ export class NotificationDisplay {
                 duration: 300,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
-            console.log('[Interceptor] Banner shown and animation started');
+            console.log('[Oldstyle Notifications] Banner shown and animation started');
 
             // Interaction: Click to open/activate app
             banner.connect('button-release-event', () => {
@@ -357,7 +357,7 @@ export class NotificationDisplay {
                     // Always try to bring the window to front if possible
                     if (source) {
                         if (source.app && typeof source.app.activate === 'function') {
-                            log(`[Interceptor] Activating window for app: ${source.app.get_name()}`);
+                            log(`[Oldstyle Notifications] Activating window for app: ${source.app.get_name()}`);
                             source.app.activate();
                         } else if (source.app && typeof source.app.open_new_window === 'function') {
                             // Some apps might need this if no window is open?
@@ -371,7 +371,7 @@ export class NotificationDisplay {
 
                     // Also invoke the notification's default action
                     if (notification && typeof notification.activate === 'function') {
-                        log(`[Interceptor] Invoking default notification action`);
+                        log(`[Oldstyle Notifications] Invoking default notification action`);
                         notification.activate();
                     }
                 } catch (e) {
@@ -391,7 +391,7 @@ export class NotificationDisplay {
                 });
             }
         } catch (e) {
-            console.log(`[Interceptor] Critical error in show(): ${e.message}`);
+            console.log(`[Oldstyle Notifications] Critical error in show(): ${e.message}`);
             console.log(e.stack);
         }
     }
@@ -421,7 +421,7 @@ export class NotificationDisplay {
         if (configs[appName]) {
             const [enabled, configuredDuration] = configs[appName];
             if (!enabled) {
-                log(`[Interceptor] Notification from ${appName} suppressed by user setting.`);
+                log(`[Oldstyle Notifications] Notification from ${appName} suppressed by user setting.`);
                 return null;
             }
             duration = configuredDuration;

@@ -5,7 +5,7 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-export default class NotificationInterceptorPreferences extends ExtensionPreferences {
+export default class OldstyleNotificationsPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         this.settings = this.getSettings();
         this._rows = [];

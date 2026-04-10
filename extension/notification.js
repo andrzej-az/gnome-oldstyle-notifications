@@ -246,13 +246,16 @@ export class NotificationDisplay {
                     style_class: 'custom-notification-actions-box',
                     vertical: false,
                     x_expand: true,
-                    y_align: Clutter.ActorAlign.START,
                 });
-                actionsBox.spacing = 12;
+                actionsBox.spacing = 20;
+
+                // Spacer to push buttons to the right
+                const spacer = new St.Widget({ x_expand: true });
+                actionsBox.add_child(spacer);
 
                 otherActions.forEach(action => {
                     const actionId = action.id;
-                    const label = action.label || actionId;
+                    const label = action.label || action._label || actionId || 'Action';
 
                     const button = new St.Button({
                         style_class: 'custom-notification-action-button',

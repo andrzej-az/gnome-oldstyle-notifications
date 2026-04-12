@@ -72,7 +72,10 @@ export class NotificationDisplay {
                 reactive: true,
                 track_hover: true,
             });
-            banner.spacing = 8; // Tighter vertical spacing
+            if (typeof banner.set_spacing === 'function')
+                banner.set_spacing(8);
+            else
+                banner.spacing = 8;
 
             // --- 1. Header Row: [App Icon] [App Name] ... [Menu] [Close] ---
             const headerBox = new St.BoxLayout({
@@ -81,7 +84,10 @@ export class NotificationDisplay {
                 x_expand: true,
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            headerBox.spacing = 8;
+            if (typeof headerBox.set_spacing === 'function')
+                headerBox.set_spacing(8);
+            else
+                headerBox.spacing = 8;
 
             // App Icon (Small)
             let appGIcon = null;
@@ -129,7 +135,7 @@ export class NotificationDisplay {
                 x_expand: true,
                 y_expand: true,
             });
-            contentBox.spacing = 0;
+            contentBox.set_spacing ? contentBox.set_spacing(0) : contentBox.spacing = 0;
 
             // Large Icon (Profile/Image)
             let finalGIcon = startGIcon;
@@ -166,7 +172,7 @@ export class NotificationDisplay {
                 x_expand: true,
                 y_align: Clutter.ActorAlign.START,
             });
-            textBox.spacing = 2;
+            textBox.set_spacing ? textBox.set_spacing(2) : textBox.spacing = 2;
 
             const summaryLabel = new St.Label({
                 text: summary,
@@ -247,7 +253,7 @@ export class NotificationDisplay {
                     vertical: false,
                     x_expand: true,
                 });
-                actionsBox.spacing = 20;
+                actionsBox.set_spacing ? actionsBox.set_spacing(20) : actionsBox.spacing = 20;
 
                 // Spacer to push buttons to the right
                 const spacer = new St.Widget({ x_expand: true });
@@ -313,16 +319,20 @@ export class NotificationDisplay {
             this._activeNotifications.push(banner);
 
             const monitor = Main.layoutManager.primaryMonitor;
-            const margin = 50;
+            const marginBottom = 50;
+            const marginRight = 16;
 
-            // Manually trigger layout to get height
-            const [minH, natH] = banner.get_preferred_height(350);
+            // Manually trigger layout to get preferred size
+            const [minW, natW] = banner.get_preferred_width(-1);
+            const [minH, natH] = banner.get_preferred_height(natW);
+
+            banner.width = natW;
             banner.height = natH;
 
-            const x = monitor.x + monitor.width - 380;
-            const y = monitor.y + monitor.height - margin - natH;
+            const x = monitor.x + monitor.width - natW - marginRight;
+            const y = monitor.y + monitor.height - marginBottom - natH;
 
-            console.log(`[Oldstyle Notifications] Banner position: x=${x}, y=${y}, height=${natH}`);
+            console.log(`[Oldstyle Notifications] Banner position: x=${x}, y=${y}, width=${natW}, height=${natH}`);
             banner.set_position(x, y);
 
             // Notify height changes (e.g. text wrapping) -> reposition
@@ -459,23 +469,26 @@ export class NotificationDisplay {
 
     _reposition() {
         const monitor = Main.layoutManager.primaryMonitor;
-        const margin = 50;
+        const marginBottom = 50;
+        const marginRight = 12;
         const spacing = 15;
 
         // Start from the bottom of the screen
-        let currentBottomY = monitor.y + monitor.height - margin;
+        let currentBottomY = monitor.y + monitor.height - marginBottom;
 
         // Iterate backwards (newest is last in array, should be at bottom)
         for (let i = this._activeNotifications.length - 1; i >= 0; i--) {
             const banner = this._activeNotifications[i];
             if (!banner || !banner.get_parent()) continue;
 
-            const [minH, natH] = banner.get_preferred_height(350);
+            const [minW, natW] = banner.get_preferred_width(-1);
+            const [minH, natH] = banner.get_preferred_height(natW);
 
-            // Ensure height is up to date
+            // Ensure dimensions are up to date
+            banner.width = natW;
             banner.height = natH;
 
-            const x = monitor.x + monitor.width - 380;
+            const x = monitor.x + monitor.width - natW - marginRight;
             const y = currentBottomY - natH;
 
             banner.ease({

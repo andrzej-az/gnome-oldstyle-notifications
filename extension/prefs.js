@@ -4,6 +4,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import { showAppChooser } from './settings-dialogs.js';
 
 export default class OldstyleNotificationsPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -51,7 +52,7 @@ export default class OldstyleNotificationsPreferences extends ExtensionPreferenc
             valign: Gtk.Align.CENTER,
         });
         addBtn.connect('clicked', () => {
-            this._showAppChooser(window);
+            showAppChooser(window, this.settings, this._updateConfig.bind(this));
         });
         addRow.add_suffix(addBtn);
         addRow.set_activatable_widget(addBtn);
@@ -90,14 +91,6 @@ export default class OldstyleNotificationsPreferences extends ExtensionPreferenc
     }
 
     _refreshAppList() {
-        // Clear existing rows
-        // AdwPreferencesGroup doesn't have remove_all? It inherits from Gtk.Widget -> no, it manages rows.
-        // We can mimic remove_all by getting children.
-        // Or just destroy the group and recreate? No, better to remove children.
-        // There isn't a direct "get_rows" API easily exposed usually.
-        // Let's iterate over children using standard Gtk API.
-
-        // Clear existing rows safely by collecting them first
         // Clear existing rows safely using tracked array
         if (this._rows) {
             this._rows.forEach(row => this.appsGroup.remove(row));
@@ -194,169 +187,5 @@ export default class OldstyleNotificationsPreferences extends ExtensionPreferenc
         const configs = this.settings.get_value('app-configs').recursiveUnpack();
         delete configs[appName];
         this.settings.set_value('app-configs', new GLib.Variant('a{s(bi)}', configs));
-    }
-
-    _showAppChooser(parentWindow) {
-        const dialog = new Gtk.Window({
-            title: _('Select Application'),
-            modal: true,
-            transient_for: parentWindow,
-            default_width: 400,
-            default_height: 500,
-            resizable: true,
-        });
-
-        const box = new Gtk.Box({ orientation: Gtk.Orientation.VERTICAL });
-        dialog.set_child(box);
-
-        // Header
-        const header = new Adw.HeaderBar();
-        dialog.set_titlebar(header);
-
-        // Custom App Button
-        const customBtn = new Gtk.Button({
-            tooltip_text: _('Add application by name'),
-            icon_name: 'document-edit-symbolic',
-        });
-        customBtn.connect('clicked', () => {
-            dialog.close();
-            this._showCustomAddDialog(parentWindow);
-        });
-        header.pack_end(customBtn);
-
-        // Search
-        const searchEntry = new Gtk.SearchEntry({
-            placeholder_text: _('Search...'),
-            margin_start: 10,
-            margin_end: 10,
-            margin_top: 10,
-            margin_bottom: 10,
-        });
-        box.append(searchEntry);
-
-        // List
-        const scrolled = new Gtk.ScrolledWindow({
-            vexpand: true,
-            hscrollbar_policy: Gtk.PolicyType.NEVER,
-        });
-        box.append(scrolled);
-
-        const listBox = new Gtk.ListBox({
-            selection_mode: Gtk.SelectionMode.SINGLE,
-            css_classes: ['boxed-list'], // Adwaita style
-            margin_start: 10,
-            margin_end: 10,
-            margin_bottom: 10,
-        });
-        scrolled.set_child(listBox);
-
-        // Populate
-        const existingConfigs = this.settings.get_value('app-configs').recursiveUnpack();
-        const configuredNames = Object.keys(existingConfigs);
-
-        const allApps = Gio.AppInfo.get_all().filter(app =>
-            app.should_show() && !configuredNames.includes(app.get_name())
-        );
-        const rows = [];
-
-        allApps.sort((a, b) => a.get_name().localeCompare(b.get_name()));
-
-        allApps.forEach(app => {
-            const row = new Adw.ActionRow({
-                title: app.get_name(),
-                activatable: true,
-            });
-
-            // Icon
-            const icon = app.get_icon();
-            if (icon) {
-                const img = new Gtk.Image({
-                    gicon: icon,
-                    pixel_size: 32,
-                });
-                row.add_prefix(img);
-            }
-
-            row._appName = app.get_name(); // Store for retrieval
-            row._appObj = app;
-
-            rows.push(row);
-            listBox.append(row);
-        });
-
-        // Search filter
-        searchEntry.connect('search-changed', () => {
-            const query = searchEntry.text.toLowerCase();
-            rows.forEach(row => {
-                const visible = row._appName.toLowerCase().includes(query);
-                row.set_visible(visible);
-            });
-        });
-
-        // Selection
-        listBox.connect('row-activated', (list, row) => {
-            if (row && row._appName) {
-                // Add default config: Enabled=true, Duration=5
-                this._updateConfig(row._appName, true, 5);
-                dialog.close();
-            }
-        });
-
-        dialog.present();
-    }
-
-    _showCustomAddDialog(parent) {
-        const dialog = new Gtk.Window({
-            title: _('Add Custom Application'),
-            modal: true,
-            transient_for: parent || window,
-            default_width: 300,
-            default_height: 150,
-            resizable: false,
-        });
-
-        const box = new Gtk.Box({
-            orientation: Gtk.Orientation.VERTICAL,
-            margin_top: 20,
-            margin_bottom: 20,
-            margin_start: 20,
-            margin_end: 20,
-            spacing: 10,
-        });
-        dialog.set_child(box);
-
-        const label = new Gtk.Label({
-            label: _('Enter the exact application name:'),
-            halign: Gtk.Align.START,
-        });
-        box.append(label);
-
-        const entry = new Gtk.Entry({
-            placeholder_text: _('Application Name'),
-        });
-        entry.connect('activate', () => {
-            const text = entry.get_text().trim();
-            if (text) {
-                this._updateConfig(text, true, 5);
-                dialog.close();
-            }
-        });
-        box.append(entry);
-
-        const addBtn = new Gtk.Button({
-            label: _('Add'),
-            halign: Gtk.Align.END,
-            css_classes: ['suggested-action'],
-        });
-        addBtn.connect('clicked', () => {
-            const text = entry.get_text().trim();
-            if (text) {
-                this._updateConfig(text, true, 5);
-                dialog.close();
-            }
-        });
-        box.append(addBtn);
-
-        dialog.present();
     }
 }

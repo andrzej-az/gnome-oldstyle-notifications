@@ -30,9 +30,11 @@ export default class OldstyleNotificationsExtension extends Extension {
                     let nTitle = '[No Title]';
                     try {
                         nTitle = notification.title;
-                    } catch (e) { }
+                    } catch (e) {
+                        console.debug(`[Oldstyle Notifications] Notification has no title: ${e.message}`);
+                    }
 
-                    log(`[Oldstyle Notifications] Trapped native notification: ${nTitle}`);
+                    console.log(`[Oldstyle Notifications] Trapped native notification: ${nTitle}`);
 
                     // Show our CUSTOM banner
                     // Ensure we pass source (notification.source is standard)
@@ -40,7 +42,7 @@ export default class OldstyleNotificationsExtension extends Extension {
                         try {
                             self._display.show(notification.source, notification);
                         } catch (e) {
-                            log(`[Oldstyle Notifications] Error calling display.show: ${e.message}`);
+                            console.warn(`[Oldstyle Notifications] Error calling display.show: ${e.message}`);
                         }
                     }
 
@@ -51,7 +53,7 @@ export default class OldstyleNotificationsExtension extends Extension {
                         const index = this._notificationQueue.indexOf(notification);
                         if (index > -1) {
                             this._notificationQueue.splice(index, 1);
-                            log(`[Oldstyle Notifications] Removed notification '${nTitle}' from queue to unblock next items.`);
+                            console.log(`[Oldstyle Notifications] Removed notification '${nTitle}' from queue to unblock next items.`);
                         }
                     }
 

@@ -86,10 +86,10 @@ export class NotificationDisplay {
 
             const bannerData = this._buildBanner(source, notification, appName, summary, body, startGIcon, iconName);
             const banner = bannerData.banner;
-            
+
             // Interaction: Click to open/activate app
             banner.connect('button-release-event', () => {
-                if (this._activeNotifications.indexOf(banner) === -1 || bannerData.dismissing) {
+                if (this._activeNotifications.indexOf(bannerData) === -1 || bannerData.dismissing) {
                     return Clutter.EVENT_PROPAGATE;
                 }
 
@@ -177,14 +177,14 @@ export class NotificationDisplay {
             reactive: true,
             track_hover: true,
         });
-        
+
         this._applyBoxSpacing(banner, BANNER_SPACING);
 
         const bannerData = { banner, dismissing: false };
 
         banner.add_child(this._buildHeaderRow(source, appName, bannerData));
         banner.add_child(this._buildContentRow(startGIcon, iconName, summary, body));
-        
+
         const actionsBox = this._buildActionsRow(notification, bannerData);
         if (actionsBox) {
             banner.add_child(actionsBox);
@@ -200,7 +200,7 @@ export class NotificationDisplay {
             x_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
-        
+
         this._applyBoxSpacing(headerBox, BANNER_SPACING);
 
         // App Icon
@@ -405,7 +405,7 @@ export class NotificationDisplay {
         try {
             urgency = notification.urgency || 1;
         } catch (e) {
-             console.debug(`[Oldstyle Notifications] Notification urgency missing: ${e.message}`);
+            console.debug(`[Oldstyle Notifications] Notification urgency missing: ${e.message}`);
         }
 
         if (urgency === 0)
@@ -447,7 +447,7 @@ export class NotificationDisplay {
         for (let i = this._activeNotifications.length - 1; i >= 0; i--) {
             const bannerData = this._activeNotifications[i];
             const banner = bannerData.banner;
-            
+
             if (!banner || !banner.get_parent()) continue;
 
             const [minW, natW] = banner.get_preferred_width(-1);
@@ -472,7 +472,7 @@ export class NotificationDisplay {
 
     _dismiss(bannerData) {
         if (!bannerData || bannerData.dismissing) return;
-        
+
         bannerData.dismissing = true;
         const banner = bannerData.banner;
 
